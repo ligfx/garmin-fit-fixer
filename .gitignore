@@ -1,0 +1,4 @@
+*.FIT
+*.fit
+FitSDKRelease*
+__pycache__
