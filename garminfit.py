@@ -210,7 +210,7 @@ class FitReader:
 
     def read_message_header(self):
         # from https://developer.garmin.com/fit/protocol/ "Record Format"
-        header = FitRecordHeader()
+        header = FitMessageHeader()
         header_raw = _read_uint8(self._f)
 
         if bool(header_raw & (1 << 7)):
@@ -243,6 +243,15 @@ class FitReader:
                         "Expected record header bit 4 (reserved field) to be 0, but got %i"
                         % bit4
                     )
+
+        if (
+            header.header_type in (HEADER_TYPE_DATA, HEADER_TYPE_COMPRESSED_DATA)
+            and not header.local_mesg_type in self._definitions
+        ):
+            raise BadFitFileException(
+                "Got data message header for undefined local mesg type %i"
+                % header.local_mesg_type
+            )
 
         for check in self._additional_checks:
             if hasattr(check, "on_message_header"):
@@ -482,9 +491,9 @@ MESG_NUM_RECORD = 20
 MESG_NUM_FIELD_DESCRIPTION = 206
 
 
-class FitRecordHeader:
+class FitMessageHeader:
     def __repr__(self):
-        s = "<FitRecordHeader %s %i" % (self.header_type, self.local_mesg_type)
+        s = "<FitMessageHeader %s %i" % (self.header_type, self.local_mesg_type)
         if self.header_type == HEADER_TYPE_COMPRESSED_DATA:
             s += " time_offset=%i" % self.time_offset
         if self.header_type == HEADER_TYPE_DEFINITION and self.has_developer_data:
@@ -514,6 +523,37 @@ def field_num_to_name(global_mesg_name, field_num):
                 5: "local_timestamp",
                 6: "event_group",
             },
+            "battery": {
+                0: "unit_voltage",
+                2: "percent",
+                3: "current",
+            },
+            "device_info": {
+                0: "device_index",
+                1: "device_type",
+                2: "manufacturer",
+                3: "serial_number",
+                4: "product",
+                5: "software_version",
+                6: "hardware_version",
+                7: "cum_operating_time",
+                10: "battery_voltage",
+                11: "battery_status",
+                18: "sensor_position",
+                19: "descriptor",
+                20: "ant_transmission_type",
+                21: "ant_device_number",
+                22: "ant_network",
+                25: "source_type",
+                27: "product_name",
+            },
+            "event": {
+                0: "event",
+                1: "event_type",
+                2: "data16",
+                3: "data",
+                4: "event_group",
+            },
             "field_description": {
                 0: "developer_data_index",
                 1: "field_definition_number",
@@ -521,6 +561,26 @@ def field_num_to_name(global_mesg_name, field_num):
                 3: "field_name",
                 8: "units",
                 14: "native_mesg_num",
+            },
+            "file_creator": {
+                0: "software_version",
+                1: "hardware_version",
+            },
+            "file_id": {
+                0: "type",
+                1: "manufacturer",
+                2: "product",
+                3: "serial_number",
+                4: "time_created",
+                5: "number",
+                8: "product_name",
+            },
+            "hr": {
+                0: "fractional_timestamp",
+                1: "time256",
+                6: "filtered_bpm",
+                9: "event_timestamp",
+                10: "event_timestamp_12",
             },
             "lap": {
                 0: "event",
@@ -550,12 +610,28 @@ def field_num_to_name(global_mesg_name, field_num):
                 24: "lap_trigger",
                 25: "sport",
             },
-            "event": {
-                0: "event",
-                1: "event_type",
-                2: "data16",
-                3: "data",
-                4: "event_group",
+            "personal_records": {
+                0: "longest_distance",
+                1: "sport",
+                2: "distance",
+                3: "duration",  # or distance, if longest_distance is set
+                4: "start_time",
+                5: "new_record",
+            },
+            "physiological_metrics": {
+                0: "min_hr",
+                1: "max_hr",
+                4: "aerobic_load",
+                # 5: "metcapacity",
+                # 6: "metwork",
+                7: "metmax",
+                9: "recovery_time",
+                14: "lactate_threshold_hr",
+                # 15: "lactatethreshold_pace15",
+                16: "lactate_threshold_speed",
+                17: "performance_condition",
+                20: "anaerobic_load",
+                29: "metmax_running",
             },
             "record": {
                 0: "position_lat",
@@ -566,6 +642,55 @@ def field_num_to_name(global_mesg_name, field_num):
                 5: "distance",
                 6: "speed",
             },
+            "session": {
+                0: "event",
+                1: "event_type",
+                2: "start_time",
+                3: "start_position_lat",
+                4: "start_position_long",
+                5: "sport",
+                6: "sub_sport",
+                7: "total_elapsed_time",
+                8: "total_timer_time",
+                9: "total_distance",
+                10: "total_cyclesstridestrokes",
+                11: "total_calories",
+                13: "total_fat_calories",
+                14: "avg_speed",
+                15: "max_speed",
+                16: "avg_heart_rate",
+                17: "max_heart_rate",
+                18: "avg_cadence",
+                19: "max_cadence",
+                20: "avg_power",
+                21: "max_power",
+                22: "total_ascent",
+                23: "total_descent",
+                24: "total_training_effect",
+                25: "first_lap_index",
+                26: "num_laps",
+                27: "event_group",
+                28: "trigger",
+            },
+            "sport": {
+                0: "sport",
+                1: "sub_sport",
+                3: "name",
+            },
+            "user_data": {
+                0: "metmax",
+                1: "age",
+                2: "height",
+                3: "weight",
+                4: "gender",
+                5: "activity_class",
+                6: "max_hr",
+                8: "recovery_time",
+                10: "avg_resting_heart_rate",
+                11: "running_lactate_threshold_heart_rate",
+                12: "functional_threshold_power",
+                13: "functional_threshold_speed",
+            },
         }
         .get(global_mesg_name, {})
         .get(field_num, field_num)
@@ -573,27 +698,100 @@ def field_num_to_name(global_mesg_name, field_num):
 
 
 def global_mesg_num_to_name(num):
+    # see https://www.rubydoc.info/gems/fit4ruby/Fit4Ruby
     return {
         0: "file_id",
+        1: "capabilities",
         2: "device_settings",
+        3: "user_profile",
+        4: "hrm_profile",
+        5: "sdm_profile",
+        6: "bike_profile",
+        7: "zones_target",
+        8: "hr_zone",
+        9: "power_zone",
+        10: "met_zone",
         12: "sport",
+        15: "goal",
         18: "session",
         19: "lap",
         20: "record",
         21: "event",
-        # 22: "unknown22",
         23: "device_info",
+        26: "workout",
+        27: "workout_step",
+        28: "schedule",
+        30: "weight_scale",
+        31: "course",
+        32: "course_point",
+        33: "totals",
         34: "activity",
+        35: "software",
+        37: "file_capabilities",
+        38: "mesg_capabilities",
+        39: "field_capabilities",
         49: "file_creator",
+        51: "blood_pressure",
+        53: "speed_zone",
         55: "monitoring",
-        # 79: "unknown79",
+        72: "training_file",
+        78: "hrv",
+        79: "user_data",  # not in SDK
+        80: "ant_rx",
+        81: "ant_tx",
+        82: "ant_channel_id",
+        101: "length",
         103: "monitoring_info",
-        # 104: "unknown104",
-        # 113: "unknown113",
-        # 140: "unknown140",
+        104: "battery",  # not in SDK
+        105: "pad",
+        106: "slave_device",
+        113: "personal_records",  # not in SDK
+        127: "connectivity",
+        128: "weather_conditions",
+        129: "weather_alert",
+        131: "cadence_zone",
+        132: "hr",
+        140: "physiological_metrics",  # not in SDK
+        142: "segment_lap",
+        145: "memo_glob",
+        148: "segment_id",
+        149: "segment_leaderboard_entry",
+        150: "segment_point",
+        151: "segment_file",
+        158: "workout_session",
+        159: "watchface_settings",
+        160: "gps_metadata",
+        161: "camera_event",
+        162: "timestamp_correlation",
+        164: "gyroscope_data",
+        165: "accelerometer_data",
+        167: "three_d_sensor_calibration",
+        169: "video_frame",
+        174: "obdii_data",
+        177: "nmea_sentence",
+        178: "aviation_attitude",
+        184: "video",
+        185: "video_title",
+        186: "video_description",
+        187: "video_clip",
+        188: "ohr_settings",
+        200: "exd_screen_configuration",
+        201: "exd_data_field_configuration",
+        202: "exd_data_concept_configuration",
         206: "field_description",
         207: "developer_data_id",
-        # 3740: "unknown3740",
+        208: "magnetometer_data",
+        209: "barometer_data",
+        210: "one_d_sensor_calibration",
+        225: "set",
+        227: "stress_level",
+        258: "dive_settings",
+        259: "dive_gas",
+        262: "dive_alarm",
+        264: "exercise_title",
+        268: "dive_summary",
+        285: "jump",
+        317: "climb_pro",
     }.get(num, str(num))
 
 
@@ -780,20 +978,20 @@ class CheckMonotonicallyIncreasingRecordTimestamps:
         if not isinstance(message, FitDataMessage):
             return
 
-        if message.global_mesg_num != MESG_NUM_RECORD:
+        if global_mesg_num_to_name(message.global_mesg_num) != "record":
             return
 
         timestamp = message.data.get(DEFINITION_NUMBER_TIMESTAMP)
         if timestamp is None:
             return
 
-        if self._last_record_timestamp is None:
-            self._last_record_timestamp = timestamp
-        elif timestamp < self._last_record_timestamp:
+        if self._last_record_timestamp and timestamp < self._last_record_timestamp:
             raise BadFitFileException(
-                "Saw decreasing record message timestamp %i, previous record message timestamp was %i"
-                % (timestamp, self._last_record_timestamp)
+                "Saw decreasing record message timestamp %i, previous record message timestamp was %i: %r"
+                % (timestamp, self._last_record_timestamp, message)
             )
+        else:
+            self._last_record_timestamp = timestamp
 
 
 class CheckNoCompressedAndNormalTimestamps:
@@ -831,6 +1029,40 @@ class CheckOnlyOneFileId:
         else:
             if message.global_mesg_num == MESG_NUM_FILE_ID:
                 self.seen_file_id = True
+
+
+class CheckOnlyOneFileCreator:
+    def __init__(self):
+        self.seen_file_creator = False
+
+    def on_message(self, message):
+        if not isinstance(message, FitDataMessage):
+            return
+
+        if global_mesg_num_to_name(message.global_mesg_num) == "file_creator":
+            if self.seen_file_creator:
+                raise BadFitFileException(
+                    "Saw a second file_creator data message: %r" % message
+                )
+            else:
+                self.seen_file_creator = True
+
+
+class CheckOnlyOneUserData:
+    def __init__(self):
+        self.seen_user_data = False
+
+    def on_message(self, message):
+        if not isinstance(message, FitDataMessage):
+            return
+
+        if global_mesg_num_to_name(message.global_mesg_num) == "user_data":
+            if self.seen_user_data:
+                raise BadFitFileException(
+                    "Saw a second user_data data message: %r" % message
+                )
+            else:
+                self.seen_user_data = True
 
 
 class CheckFileIdExistsAndIsFirst:
